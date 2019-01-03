@@ -27,4 +27,4 @@ In the active mode, in addition to the pping, the ipperf create traffic TCP to t
 
 In the analyzer mode, neither the pping neither the iperf is execute, and is open and analyzed the default file 'output.txt' or the file in the optional argument -f from command line.
 
-Os resultados recebidos são comprimidos separados por períodos de 1 segundo. Cada porção contẽm o maior RTT, menor RTT, média RTT, total da amostra, assim como maior Jitter, menor Jitter, média dos Jitter.
+The results received are samples of captured packets separated by periods of 1 second. Each period summarized contains the highest RTT, lowest RTT, mean RTT, total sample, as well as higher Jitter, lower Jitter, Jitter mean.
