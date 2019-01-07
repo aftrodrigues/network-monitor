@@ -28,3 +28,5 @@ In the active mode, in addition to the pping, the ipperf create traffic TCP to t
 In the analyzer mode, neither the pping neither the iperf is execute, and is open and analyzed the default file 'output.txt' or the file in the optional argument -f from command line.
 
 The results received are samples of captured packets separated by periods of 1 second. Each period summarized contains the highest RTT, lowest RTT, mean RTT, total sample, as well as higher Jitter, lower Jitter, Jitter mean.
+
+Iperf3 page: https://github.com/esnet/iperf/blob/master/src/iperf_udp.c
