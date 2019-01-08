@@ -30,3 +30,16 @@ In the analyzer mode, neither the pping neither the iperf is execute, and is ope
 The results received are samples of captured packets separated by periods of 1 second. Each period summarized contains the highest RTT, lowest RTT, mean RTT, total sample, as well as higher Jitter, lower Jitter, Jitter mean.
 
 Iperf3 page: https://github.com/esnet/iperf/blob/master/src/iperf_udp.c
+
+
+This module expect that the pping is installed in a directory next to the script.
+like this:
+network-monitor:
+|-pping/
+|
+|-server_monitor.py
+|-active_monitor.py
+|-passive_monitor.py
+|
+|-server_monitor.config
+|

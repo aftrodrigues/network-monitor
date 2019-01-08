@@ -1,51 +1,114 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-import argparse
 from argument_parse import *
-from passive_monitor import *
+
+import passive_monitor
+import active_monitor
+
+from threading import Thread
+import argparse
+import time
+import collections
+import traceback
+import logging as log
+
+global main_process
+
+class server_monitor(Thread):
+	def __init__(self, active_monitor, passive_monitor, interface, interval=2, hosts=[]):
+		self.Thread.__init__()
+		self.passive = passive_monitor
+		self.active = active_monitor
+		self.interval = interval
+		self.hosts = hosts
+
+		self.exec_flag = False
+		self.data = collections.OrderedDict()
+
+	def run(self):
+		self.exec_flag = True
+		self.passive.start()
+		#self.active.set_monitor()
+
+		while self.exec_flag:
+			time_now = time.time()
+
+			new_data = self.passive.get_data()
+			
+
+			self.data.update( self._filter(new_data) )
+
+			if not self.sufficient_data():
+				self.active.start()
+
+			while time.time() - time_now < self.interval and self.exec_flag:
+				time.sleep(.2)
+	
+	def stop(self):
+		self.exec_flag = False
+		self.passive.stop()
+		self.active.stop()
+
+	def get_data(self):
+		return self.data
 
 
-class server_monitor:
+	def _filter(self, new_data):
+		filtered = collections.OrderedDict()
+		if len(self.hosts) == 0:
+			filtered = new_data	
+		else:
+			for tm in new_data:
+				for send in new_data[tm]:
+					if send in self.hosts:
+						if tm not in filtered:
+							filtered[tm] = {}
+						filtered[tm][send] = new_data[tm][send]
+		return filtered
 
-	def __init__(self):
 
-
-def main():
-	args_parser = set_argparse()
-	args = parse_arguments(args_parser)
+def main(args):
+	global main_process
 
 	log_format = '[%(asctime)s] %(funcName)s[%(lineno)d]: %(msg)s'
 
 	log.basicConfig(level=args.level, format=log_format)
 	log.debug('DEBUG: start time: %s' % time.time())
 
+	#active = active_monitor.active_monitor()
+	#passive = passive_monitor.pping_monitor(interface='enp3s0', log)
+	main_process = server_monitor(	active_monitor.active_monitor, 
+									passive_monitor.pping_monitor, 
+									interface='enp3s0',
+									hosts=['143.54.12.128'])
+	#main_process.start()
+	return
 	#  TODO: take automaticate the interface in the computer
 	if args.interface is None:
 		args.interface = default_interface
 	args_interpreter(args)
 
 	# Initialing the subprocess 'necessarios'
-	if args.analyzer is False:
-		log.info('INFO: Starting pping...')
-		arq_output = open(args.file, 'w')
-		pping_process = sub.Popen(['./pping/pping', '-m', '-i', args.interface, '-q'], stdout=arq_output)
-		process.append(simpleNamespace.SimpleNamespace(name='pping', process=pping_process))
-
-		if args.active:
-			log.info('Starting transmission test with iperf3')
-			#iperf3_process = sub.Popen(['iperf3',  '-c', 'futebol-cbtm'], stdout=sub.PIPE)
-			#process.append(iperf3_process)
-			#print(iperf3_process)
-
-	make_relatory(seconds=args.time)
-	clean_up()	
-	log.debug('end time: %s' % time.time())
+	if args.active:
+		log.info('Starting transmission test with iperf3')
+		#iperf3_process = sub.Popen(['iperf3',  '-c', 'futebol-cbtm'], stdout=sub.PIPE)
+		#process.append(iperf3_process)
+		#print(iperf3_process)
 
 
+# need refactor!
 def clean_up():
 	"""
 	Close all the process open by this script, referenced by the GLOBAL list process.
 	:return:
 	"""
+	global main_process
+
+	main_process.stop()
+
+
+	process = []
 	log.debug('Cleaning')
 
 	child_process = ''
@@ -63,21 +126,26 @@ def clean_up():
 	log.info('Exiting')
 
 
+
 if __name__ == '__main__':
-	#  Examples to make by hand the command line handler
-	#print('Number of arguments: %s' % len(sys.argv))
-	#print('Argument list: %s' % sys.argv)
-	
+	args_parser = set_argparse()
+
 	try:
-		main()	
+		main( args=parse_arguments(args_parser) )
+
 	except KeyboardInterrupt:
 		log.info('Keyboard Interruption')
 		clean_up()
+
 		try:
 			sys.exit(0)
 		except SystemExit:
 			os._exit(0)
+
 	except Exception as e:
 		clean_up()
 		print(traceback.format_exc())
 		raise e
+	finally:
+		clean_up()
+		pass

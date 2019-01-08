@@ -11,30 +11,31 @@ import collections
 import sys
 import os
 
-output_file = 'pping/output.txt'
+pping_output_file = 'pping/output.txt'
 global pping
 
 class pping_monitor(Thread):
 
-	def __init__(self,logger, time_interval=1):
+	def __init__(self,interface,logger, time_interval=1):
 		Thread.__init__(self)
+		self.interface = interface
 		self.log = logger
-		#self.monitor = monitor
 		self.time_interval = time_interval
+
 		self.data = collections.OrderedDict()
 		self.exec_flag = True
 		self.process = []
 		self.last_data_send = 0
 		self.output = output_file
-		self.interface = 'enp3s0'
 		self.arq_output = None
 
 	def start_monitor(self):
-		arq_output = open(self.output, 'w')
+		arq_output = open(self.pping_output_file, 'w')
 		pping_process = sub.Popen(['./pping/pping', '-m', '-i', self.interface, '-q'], stdout=arq_output)
 		self.process.append(pping_process)
 
-
+	def stop(self):
+		self.stop_monitor()
 
 	def stop_monitor(self):
 		for p in self.process:
@@ -51,21 +52,24 @@ class pping_monitor(Thread):
 		if self.arq_output and not self.arq_output.closed:
 			arq_output.close()
 
-
 	def stop_thread(self):
 		self.exec_flag = False
 
 
-	def get_data(self, last_time):
+	def get_data(self):
 		data = collections.OrderedDict()
+		k = 0
 		for k in self.data.keys():
-			if k > last_time:
+			if k > self.last_data_send:
 				data[k] = self.data[k]
+		self.last_data_send = k
 		return data
 
 
 	def run(self):
-		#self.start_monitor()
+		#if len(self.process) == 0:
+		#	self.start_monitor()
+
 		lines_read = 0
 
 		while self.exec_flag:
@@ -180,8 +184,8 @@ class pping_monitor(Thread):
 
 	def _interprete_data(self, struct_data):
 		"""
-		resume as informações contidas no dicionário, transformando a lista de informações por segundo
-		em maior, menor, média e total de packets amostrados.
+		resume as informações contidas na estrutura de informações, transformando a lista de informações por segundo
+		em rtt maior, menor e média, jtt maior, menor e média, e total de packets amostrados
 		:param results: dict( <times> : dict ( <senders>: dict( <receivers>: list( [rtt, min->rtt]))))
 
 		:return: dict( <times> : dict ( <senders>: dict( <receivers>: (maior, menor, media, total))))
@@ -272,14 +276,14 @@ def teste():
 	global pping
 	pping = pping_monitor(log)
 	pping.output = 'run_teste'
-	pping.start_monitor()
+	#pping.start_monitor()
 	pping.start()
 
 	init_time = time.time()
 	line = 0
 	while time.time() - init_time < 20:
 		time.sleep(.5)
-		print(pping.get_data(line))
+		print(pping.get_data())
 	pping.stop_monitor()
 
 
@@ -292,10 +296,13 @@ if __name__ == '__main__':
 		teste()
 	except KeyboardInterrupt:
 		log.info('Keyboard Interruption')
-
 		pping.stop_monitor()
 
 		try:
 			sys.exit(0)
 		except SystemExit:
 			os._exit(0)
+	except Exception as e:
+		pping.stop_monitor()
+		log.error('Error')
+		raise e
