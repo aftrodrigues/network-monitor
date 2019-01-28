@@ -11,8 +11,8 @@ import collections
 import sys
 import os
 
-pping_output_file = 'pping/output.txt'
-global pping
+output_file = 'pping/output.txt'
+pping = None
 
 class pping_monitor(Thread):
 
@@ -27,6 +27,7 @@ class pping_monitor(Thread):
 		self.process = []
 		self.last_data_send = 0
 		self.output = output_file
+		self.pping_output_file = output_file
 		self.arq_output = None
 
 	def start_monitor(self):
@@ -98,7 +99,7 @@ class pping_monitor(Thread):
 						self.data[f].update(fine_data[f])
 					else:
 						self.data[f] = fine_data[f]
-				print(self.data)
+				log.debug(self.data)
 				
 
 	def _get_data_from_file(self, file, old_lines = 0):
@@ -200,6 +201,7 @@ class pping_monitor(Thread):
 						#log.debug('returning: %s %s %s %s' % (tm, send, recv, info))
 						yield tm, send, recv, info
 
+		
 		for tm, send, recv, infos in traver_data(struct_data):
 			if time.time() - tm < 1:
 				#  the program is still fetching one second of information about this period of time
@@ -272,25 +274,30 @@ class pping_monitor(Thread):
 
 
 def teste():
-	log.debug('Starting monitor')
 	global pping
-	pping = pping_monitor(log)
+
+	log.info('Starting monitor')
+	
+	pping = pping_monitor('enp3s0', log)
 	pping.output = 'run_teste'
-	#pping.start_monitor()
+	
 	pping.start()
 
 	init_time = time.time()
 	line = 0
+
 	while time.time() - init_time < 20:
 		time.sleep(.5)
-		print(pping.get_data())
+		log.info(pping.get_data())
+
 	pping.stop_monitor()
 
 
 if __name__ == '__main__':
-	log.basicConfig(level='DEBUG', format='%(funcName)s [%(lineno)s]: %(msg)s')
-	log.info('Teste')
 	global pping
+
+	log.basicConfig(level='DEBUG', format='%(funcName)s [%(lineno)s]: %(msg)s')
+		
 
 	try:
 		teste()
@@ -303,6 +310,7 @@ if __name__ == '__main__':
 		except SystemExit:
 			os._exit(0)
 	except Exception as e:
+		print(e)
 		pping.stop_monitor()
 		log.error('Error')
 		raise e
