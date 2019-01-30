@@ -2,28 +2,31 @@
 # -*- coding: utf-8 -*-
 
 from threading import Thread
-import simpleNamespace
-import si_formatter
 import subprocess as sub
 import logging as log
 import time
 import collections
 import sys
 import os
+import json
+
+import simpleNamespace
+import si_formatter
+import argument_parse
 
 output_file = 'pping/output.txt'
 pping = None
 
 class pping_monitor(Thread):
 
-	def __init__(self,interface,logger, time_interval=1):
+	def __init__(self,interface,logger, time_interval=1, output_file=output_file):
 		Thread.__init__(self)
 		self.interface = interface
 		self.log = logger
 		self.time_interval = time_interval
 
 		self.data = collections.OrderedDict()
-		self.exec_flag = True
+		self.exec_flag = False
 		self.process = []
 		self.last_data_send = 0
 		self.output = output_file
@@ -32,7 +35,7 @@ class pping_monitor(Thread):
 
 	def start_monitor(self):
 		arq_output = open(self.pping_output_file, 'w')
-		pping_process = sub.Popen(['./pping/pping', '-m', '-i', self.interface, '-q'], stdout=arq_output)
+		pping_process = sub.Popen(['./pping/pping', '-m', '-i', self.interface, '-q'], stdout=open(self.output, 'w'))
 		self.process.append(pping_process)
 
 	def stop(self):
@@ -57,19 +60,11 @@ class pping_monitor(Thread):
 		self.exec_flag = False
 
 
-	def get_data(self):
-		data = collections.OrderedDict()
-		k = 0
-		for k in self.data.keys():
-			if k > self.last_data_send:
-				data[k] = self.data[k]
-		self.last_data_send = k
-		return data
-
-
 	def run(self):
-		#if len(self.process) == 0:
-		#	self.start_monitor()
+		self.exec_flag = True
+
+		if len(self.process) == 0:
+			self.start_monitor()
 
 		lines_read = 0
 
@@ -79,7 +74,6 @@ class pping_monitor(Thread):
 			while (time.time() - last_metric) < self.time_interval:
 				time.sleep(0.1)
 			
-
 			data, lines_read = self._get_data_from_file(self.output, lines_read)
 			
 			if len(data) != 0:
@@ -100,13 +94,48 @@ class pping_monitor(Thread):
 					else:
 						self.data[f] = fine_data[f]
 				log.debug(self.data)
-				
+		
 
-	def _get_data_from_file(self, file, old_lines = 0):
+	def analyze_file(self, file):
+		data, lines_read = self._get_data_from_file(file, 0)
+
+		if len(data) != 0:
+			struct_data = {}
+
+			lines = data.split("\n")
+			for line in lines:
+				data_tupla = self._parser(line)
+
+				if None not in data_tupla:
+					self._added_raw_data(struct_data, data_tupla)
+			
+			fine_data = self._interprete_data(struct_data)
+			
+			for f in fine_data.keys():
+				if f in self.data:
+					self.data[f].update(fine_data[f])
+				else:
+					self.data[f] = fine_data[f]
+			log.debug(self.data)
+
+
+	def _unproccessed_data(self):
+		data = collections.OrderedDict()
+		tm = 0
+		for tm in self.data.keys():
+			if tm > self.last_data_send:
+				data[tm] = self.data[tm]
+		self.last_data_send = tm
+		return data
+
+
+	def _get_data_from_file(self, file=None, old_lines = 0):
 		""" recupera as ultima linhas adicionadas do arquivo dado
 		file: String, local e nome do arquivo onde esta os dados
 		old_lines: Integer, devolve as ultimas linhas a partir dessas linhas
 		"""
+		if not file:
+			file = self.output
 
 		actual_lines = sub.check_output(['wc', '-l', file])
 		actual_lines = int(actual_lines.split(' ')[0])
@@ -239,29 +268,20 @@ class pping_monitor(Thread):
 			if soma != 0 and total != 0:
 				media = soma/total
 			else:
-				media = max_rtt
-
-			header = '[%s] %s -> %s' % ( time.strftime('%H:%M:%S', time.gmtime(tm)), send, recv)
-			log.info(header)
-			log.debug('rtt: max:%s / min:%s / media:%s / total: %s' %
-				(si_formatter.format_float_string(max_rtt, 's'),
-				si_formatter.format_float_string(min_rtt, 's'),
-				si_formatter.format_float_string(media, 's'),
-				total))
+				media = max_rtt			
 
 			if total == 1:
-				log.debug('jtt: max:%s / min %s / sum %s / media %s' %
-					(max_jtt, min_jtt, sum_jtt, sum_jtt / total))
 				media_jtt = max_jtt
 			else:
-				log.debug('jtt: max:%s / min %s / sum %s / media %s' %
-				(	si_formatter.format_float_string(max_jtt, 's'),
-					si_formatter.format_float_string(min_jtt, 's'),
-					si_formatter.format_float_string(sum_jtt, 's'),
-					si_formatter.format_float_string(sum_jtt / total, 's')))
 				media_jtt = sum_jtt / total
-			infos = simpleNamespace.SimpleNamespace(max_rtt=max_rtt, min_rtt=min_rtt, media_rtt=media, total=total,
-													max_jtt=max_jtt, min_jtt=min_jtt, media_jtt=media_jtt)
+
+			infos = simpleNamespace.SimpleNamespace(total=total,
+													max_rtt=max_rtt, 
+													min_rtt=min_rtt, 
+													media_rtt=media, 
+													max_jtt=max_jtt, 
+													min_jtt=min_jtt, 
+													media_jtt=media_jtt)
 
 			if tm not in relatory:
 				relatory[tm] = {}
@@ -269,38 +289,63 @@ class pping_monitor(Thread):
 			if send not in relatory[tm]:
 				relatory[tm][send] = {}
 
+			header = '[%s] %s -> %s' % ( time.strftime('%H:%M:%S', time.gmtime(tm)), send, recv)
+			log.info(header)
+			log.info('rtt: max:%s / min:%s / media:%s / Samples: %s' %
+				(si_formatter.format_float_string(max_rtt, 's'),
+				si_formatter.format_float_string(min_rtt, 's'),
+				si_formatter.format_float_string(media, 's'),
+				total))
+
+			log.info('jtt: max:%s / min %s / sum %s / media %s' %
+				(	si_formatter.format_float_string(max_jtt, 's'),
+					si_formatter.format_float_string(min_jtt, 's'),
+					si_formatter.format_float_string(sum_jtt, 's'),
+					si_formatter.format_float_string(sum_jtt / total, 's')))
+
 			relatory[tm][send][recv] = infos
 		return relatory
 
+	def get_statistics(self, data=()):
+		if len(data) == 0:
+			return (0, 0, 0, 0)
 
-def teste():
+
+
+
+def teste(args):
 	global pping
 
-	log.info('Starting monitor')
-	
-	pping = pping_monitor('enp3s0', log)
-	pping.output = 'run_teste'
-	
-	pping.start()
+	log.debug('Args %s' % args)
 
-	init_time = time.time()
-	line = 0
+	log.info('Starting monitor')	
+	pping = pping_monitor('enp3s0', log, output_file='run_teste.txt')
 
-	while time.time() - init_time < 20:
-		time.sleep(.5)
-		log.info(pping.get_data())
+	if args.analyzer:
+		log.info( json.dumps(pping.analyze_file(args.file), indent=4) )
 
-	pping.stop_monitor()
+	else:
+		pping.start()
+
+		init_time = time.time()
+		line = 0
+
+		while time.time() - init_time < 20:
+			time.sleep(.5)
+			data = pping._unproccessed_data()
+			
+		pping.stop_monitor()
 
 
 if __name__ == '__main__':
 	global pping
 
-	log.basicConfig(level='DEBUG', format='%(funcName)s [%(lineno)s]: %(msg)s')
+	args = argument_parse.set_argparse()
+	format = '%(funcName)s [%(lineno)s]: %(msg)s'
+	log.basicConfig(level=args.level, format=format)
 		
-
 	try:
-		teste()
+		teste(args)
 	except KeyboardInterrupt:
 		log.info('Keyboard Interruption')
 		pping.stop_monitor()

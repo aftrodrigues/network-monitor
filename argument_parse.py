@@ -43,7 +43,11 @@ def set_argparse():
 	args_parser.add_argument('-c', '--config-file', default='server_monitor.config',
 		help='Config file of this script')
 
-	return args_parser
+	args = parse_arguments(args_parser)
+
+	args_interpreter(args)
+
+	return args
 
 
 def parse_arguments(parser):
