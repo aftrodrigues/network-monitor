@@ -1,3 +1,8 @@
+"""
+One type of active monitor.
+Uses the 'ping' command to get the latency until one server.
+"""
+
 import sys
 import os
 import traceback
@@ -19,6 +24,7 @@ class ping_monitor:
 		self.log = log
 
 		if self.interval < .2:
+			print 'interval: %s' % self.interval
 			raise Exception("Ping interval can't less than 200ms")
 
 
@@ -33,15 +39,24 @@ class ping_monitor:
 		"""
 
 		results = []
-		log.info('begin monitor in ip %s' % self.ip)
+		log.info('begin monitor to ip %s by iface %s' % (self.ip, self.iface))
 		
 		self.log.debug('Sending ping to %s' % self.ip)
-		ping = sub.Popen(['ping', '-i', str(self.interval), #  interval >= 200ms
+
+		parameters = ['ping', '-i', str(self.interval), #  interval >= 200ms
 									  '-D',	# Show epoch time
 									  '-n', #  Numeric output only
-									  self.ip],   #  ip to ping
-									  stdout=sub.PIPE,  # redirect the data out to pipe
-									  stderr=sub.PIPE)  # reduret tge data out to pipe
+									  self.ip]   #  ip to ping
+
+		# Use the rules of route default or set the interface manually
+		parameters.extend( ['-I', self.iface] ) if self.iface else None
+
+		self.log.debug('Parameters of the ping: %s' % str(parameters))
+
+		ping = sub.Popen( 	parameters,
+							stdout=sub.PIPE,  # redirect the data out to pipe
+							 stderr=sub.PIPE)  # reduret tge data out to pipe
+
 		process.append(ping)
 		self.process = ping
 
@@ -53,6 +68,10 @@ class ping_monitor:
 	
 
 	def stop(self):
+		"""
+		Stop the all the process.
+		
+		"""
 		p = self.process
 		log.debug('Process %s / status: %s' % (p.pid, 'Dead' if p.poll() else 'Alive'))
 		log.debug('status: %s' % p.poll())
@@ -74,7 +93,7 @@ class ping_monitor:
 		"""
 		Read from the stdout from ping and parsing the results until the last ping
 
-		return: list of tuples, each tuple in the format (time_of_packet, rtt)
+		return: list of 2-tuples, each tuple in the format (time_of_packet, rtt)
 		"""
 
 		buffer = 0
@@ -100,6 +119,11 @@ class ping_monitor:
 
 	def _parse_line(self, str):
 		"""
+		Parse one line from the command ping and return one tuple with the data.
+
+		:param: str: One line from command <ping -n>.
+
+		return: 2-Tuple, in the format (time of packet, RTT of the packet)
 		"""
 		splited = str.split(" ")
 
@@ -116,12 +140,25 @@ class ping_monitor:
 
 
 	def _str_ping_bottom_parse(self, str):
+		"""
+		Probably not used. and Incomplete.
+
+		Get the statistics calculate direct by the command <ping>
+		"""
 		parsed = str.splitlines()
 		data = parsed[-1]
 		rtt_min, rtt_avg, rtt_max, rtt_mdev = data.split(" = ")[1].split("/")
 		print("%s/%s/%s/%s" %(rtt_min, rtt_avg, rtt_max, rtt_mdev))
 
+
 	def get_statistics(self, data=()):
+		"""
+		Calculate some statistics from the <data> give. 
+
+		:param: data: list of Tuples, in the format (time, value)
+
+		Return: 5-Tuple, with (max_value, average_value, min_value, variation of value, total of sample)
+		"""
 		data = list( data )
 
 		if len(data) == 0:
@@ -204,29 +241,33 @@ def main(args):
 	log.debug(args)
 	i = 0
 	count = 10
-
 	monitors = []
 
+	# Starting one monitor to each ip give
 	for ip in args.ips:
-		monitor = ping_monitor(args.interface, 1/args.frequency, ip, log)
-		monitors.append( monitor )
-		monitor.start_monitor()
+		monitor = ping_monitor(args.interface, 1.0/args.frequency, ip, log)
+		
+		status = monitor.start_monitor()
+		if status:
+			monitors.append( monitor )
+		else:
+			log.error("Can't initialized the monitor to IP %s" % monitor.ip)
 
-	
 	while True:
+		# Waiting loop to get the results, by time
 		time_now = time.time()
 		while time.time() - time_now < args.interval:
 			time.sleep(.1)
 		
+		# Getting the results of each monitor activate
 		for monitor in monitors:
 			dados = monitor.get_data()
 			statistics = monitor.get_statistics(dados)
 			log.info('%s: rtt_max/avg/min/variation/sample: %s' % (monitor.ip , 
 									('%.6f %.6f %.6f %.6f %d' % statistics)))
-
 		print('')
 
-
+	# Stopping the monitors
 	for monitor in monitors:
 		monitor.stop()
 
@@ -240,7 +281,6 @@ if __name__ == '__main__':
 		format = '%(msg)s'
 
 	log.basicConfig(level=args.level, format=format)
-
 
 	try:
 		main(args)
